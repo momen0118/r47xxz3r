@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260331">
+<link rel="stylesheet" href="style.css?v=20260331b">
 </head>
 <body>
 
@@ -49,7 +49,12 @@
   </div>
 
   <div class="input-area">
+    <div class="attach-preview" id="attachPreview"></div>
     <div class="input-wrapper">
+      <input type="file" id="imageInput" accept="image/jpeg,image/png,image/gif,image/webp" hidden multiple>
+      <button class="icon-btn attach-btn" id="attachBtn" title="画像添付">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      </button>
       <textarea id="messageInput" placeholder="…" rows="1"></textarea>
       <button class="send-btn" id="sendBtn" disabled>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -117,6 +122,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20260331"></script>
+<script src="app.js?v=20260331b"></script>
 </body>
 </html>

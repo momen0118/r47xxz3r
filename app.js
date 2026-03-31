@@ -1,11 +1,10 @@
 /* ============================
-   燈 — Chat Client Logic
+   燈 — Chat Client Logic v2
    ============================ */
 
 (() => {
   'use strict';
 
-  // ── Storage Keys ──
   const SK = {
     API_KEY:   'aki_apikey',
     MODEL:     'aki_model',
@@ -16,17 +15,15 @@
     MAX_TOK:   'aki_maxtok',
   };
 
-  // ── State ──
   let threads   = [];
   let activeId  = null;
   let streaming = false;
   let abortCtrl = null;
+  let pendingImages = []; // [{data, mediaType, thumbnail}]
 
-  // ── Mobile detection ──
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
                    ('ontouchstart' in window);
 
-  // ── DOM ──
   const $ = id => document.getElementById(id);
   const overlay         = $('overlay');
   const sidebar         = $('sidebar');
@@ -46,6 +43,86 @@
   const maxTokensInput  = $('maxTokensInput');
   const renameOverlay   = $('renameOverlay');
   const renameInput     = $('renameInput');
+  const imageInput      = $('imageInput');
+  const attachBtn       = $('attachBtn');
+  const attachPreview   = $('attachPreview');
+
+  // ── Image processing ──
+  const MAX_IMG_DIM = 800;
+  const IMG_QUALITY = 0.8;
+
+  function resizeAndCompress(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+
+          // Only resize if larger than max
+          if (width > MAX_IMG_DIM || height > MAX_IMG_DIM) {
+            if (width > height) {
+              height = Math.round(height * MAX_IMG_DIM / width);
+              width = MAX_IMG_DIM;
+            } else {
+              width = Math.round(width * MAX_IMG_DIM / height);
+              height = MAX_IMG_DIM;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Full size for API (stored in memory only during session)
+          const fullDataUrl = canvas.toDataURL('image/jpeg', IMG_QUALITY);
+          const fullBase64 = fullDataUrl.split(',')[1];
+
+          // Thumbnail for storage/display
+          const thumbSize = 120;
+          let tw = thumbSize, th = thumbSize;
+          if (width > height) { th = Math.round(height * thumbSize / width); }
+          else { tw = Math.round(width * thumbSize / height); }
+          const tc = document.createElement('canvas');
+          tc.width = tw; tc.height = th;
+          tc.getContext('2d').drawImage(img, 0, 0, tw, th);
+          const thumbDataUrl = tc.toDataURL('image/jpeg', 0.6);
+
+          resolve({
+            data: fullBase64,
+            mediaType: 'image/jpeg',
+            thumbnail: thumbDataUrl,
+          });
+        };
+        img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error('ファイルを読み込めませんでした'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderAttachPreview() {
+    attachPreview.innerHTML = '';
+    pendingImages.forEach((img, i) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'attach-thumb';
+      thumb.innerHTML = `
+        <img src="${img.thumbnail}" alt="">
+        <div class="attach-thumb-remove" data-idx="${i}">✕</div>
+      `;
+      attachPreview.appendChild(thumb);
+    });
+    attachPreview.querySelectorAll('.attach-thumb-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pendingImages.splice(parseInt(btn.dataset.idx), 1);
+        renderAttachPreview();
+        updateSendBtn();
+      });
+    });
+  }
 
   // ── Init ──
   function init() {
@@ -63,7 +140,6 @@
     autoResize(messageInput);
   }
 
-  // ── Persistence ──
   function loadState() {
     apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
     modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
@@ -75,8 +151,14 @@
   }
 
   function saveThreads() {
-    localStorage.setItem(SK.THREADS, JSON.stringify(threads));
-    localStorage.setItem(SK.ACTIVE,  activeId || '');
+    try {
+      localStorage.setItem(SK.THREADS, JSON.stringify(threads));
+      localStorage.setItem(SK.ACTIVE,  activeId || '');
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        showToast('ストレージ容量が不足しています。古いスレッドを削除してください');
+      }
+    }
   }
 
   function saveSettings() {
@@ -140,6 +222,8 @@
       }
     }
     activeId = id;
+    pendingImages = [];
+    renderAttachPreview();
     saveThreads();
     renderThreadList();
     renderMessages();
@@ -192,16 +276,24 @@
     }
     emptyState.style.display = 'none';
     t.messages.forEach(m => {
-      chatMessages.appendChild(createMsgEl(m.role, m.content));
+      chatMessages.appendChild(createMsgEl(m.role, m.text || m.content, m.images));
     });
     scrollToBottom();
   }
 
-  function createMsgEl(role, content) {
+  function createMsgEl(role, content, images) {
     const el = document.createElement('div');
     el.className = `msg ${role}`;
     const label = role === 'user' ? 'you' : '燈';
-    el.innerHTML = `<div class="msg-role">${label}</div><div class="msg-content"></div>`;
+
+    let imagesHtml = '';
+    if (images && images.length > 0) {
+      imagesHtml = '<div class="msg-images">' +
+        images.map(img => `<img src="${img.thumbnail || img}" alt="">`).join('') +
+        '</div>';
+    }
+
+    el.innerHTML = `<div class="msg-role">${label}</div>${imagesHtml}<div class="msg-content"></div>`;
     el.querySelector('.msg-content').textContent = content;
     return el;
   }
@@ -217,7 +309,6 @@
     });
   }
 
-  // ── Build system prompt ──
   function buildSystemPrompt() {
     const sys  = localStorage.getItem(SK.SYSTEM) || '';
     const know = localStorage.getItem(SK.KNOWLEDGE) || '';
@@ -227,8 +318,41 @@
     return parts.join('\n\n');
   }
 
-  // ── API Call (Streaming) ──
-  async function sendMessage(text) {
+  // ── Build API message content ──
+  function buildUserContent(text, images) {
+    // If no images, simple string
+    if (!images || images.length === 0) return text;
+
+    // With images, use content array
+    const content = [];
+    images.forEach(img => {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mediaType,
+          data: img.data,
+        }
+      });
+    });
+    if (text) {
+      content.push({ type: 'text', text });
+    }
+    return content;
+  }
+
+  // ── Build full API messages array ──
+  function buildApiMessages(messages) {
+    return messages.map(m => {
+      if (m.role === 'user' && m.apiImages && m.apiImages.length > 0) {
+        return { role: 'user', content: buildUserContent(m.text || m.content, m.apiImages) };
+      }
+      return { role: m.role, content: m.text || m.content };
+    });
+  }
+
+  // ── API Call ──
+  async function sendMessage(text, images) {
     if (streaming) return;
     const apiKey = localStorage.getItem(SK.API_KEY);
     if (!apiKey) { showToast('APIキーを設定してください'); openSettings(); return; }
@@ -236,7 +360,15 @@
     let t = getActive();
     if (!t) t = createThread();
 
-    t.messages.push({ role: 'user', content: text });
+    // Store message — thumbnails for localStorage, full data in memory for API
+    const msgObj = {
+      role: 'user',
+      text: text,
+      content: text, // fallback
+      images: images ? images.map(i => ({ thumbnail: i.thumbnail })) : [],
+      apiImages: images || [], // full base64, not persisted (too large)
+    };
+    t.messages.push(msgObj);
     saveThreads();
 
     emptyState.style.display = 'none';
@@ -244,7 +376,7 @@
       chatMessages.removeChild(emptyState);
     }
 
-    chatMessages.appendChild(createMsgEl('user', text));
+    chatMessages.appendChild(createMsgEl('user', text, msgObj.images));
     scrollToBottom();
 
     if (t.messages.length === 1 && t.name === '新しいスレッド') {
@@ -252,7 +384,7 @@
       renameThread(t.id, preview);
     }
 
-    const apiMessages = t.messages.map(m => ({ role: m.role, content: m.content }));
+    const apiMessages = buildApiMessages(t.messages);
 
     const asstEl = document.createElement('div');
     asstEl.className = 'msg assistant streaming';
@@ -337,7 +469,7 @@
       updateSendBtn();
 
       if (fullResponse) {
-        t.messages.push({ role: 'assistant', content: fullResponse });
+        t.messages.push({ role: 'assistant', text: fullResponse, content: fullResponse });
         saveThreads();
       }
     }
@@ -362,11 +494,29 @@
     $('closeRenameBtn').addEventListener('click', closeRename);
     renameOverlay.addEventListener('click', (e) => { if (e.target === renameOverlay) closeRename(); });
 
-    // Send — mobile: Enter = newline only, desktop: Enter = send
+    // Image attach
+    attachBtn.addEventListener('click', () => imageInput.click());
+    imageInput.addEventListener('change', async () => {
+      const files = Array.from(imageInput.files);
+      if (!files.length) return;
+      for (const file of files) {
+        try {
+          const processed = await resizeAndCompress(file);
+          pendingImages.push(processed);
+        } catch (e) {
+          showToast(e.message);
+        }
+      }
+      renderAttachPreview();
+      updateSendBtn();
+      imageInput.value = '';
+    });
+
+    // Send
     sendBtn.addEventListener('click', handleSend);
     messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.isComposing) {
-        if (isMobile) return; // let Enter insert newline
+        if (isMobile) return;
         if (!e.shiftKey) {
           e.preventDefault();
           handleSend();
@@ -379,15 +529,19 @@
 
   function handleSend() {
     const text = messageInput.value.trim();
-    if (!text || streaming) return;
+    const images = pendingImages.length > 0 ? [...pendingImages] : null;
+    if (!text && !images) return;
+    if (streaming) return;
     messageInput.value = '';
     messageInput.style.height = 'auto';
+    pendingImages = [];
+    renderAttachPreview();
     updateSendBtn();
-    sendMessage(text);
+    sendMessage(text, images);
   }
 
   function updateSendBtn() {
-    sendBtn.disabled = !messageInput.value.trim() || streaming;
+    sendBtn.disabled = (!messageInput.value.trim() && pendingImages.length === 0) || streaming;
   }
 
   function toggleSidebar() {
@@ -437,7 +591,6 @@
     renamingId = null;
   }
 
-  // ── Toast ──
   let toastEl = null;
   function showToast(msg) {
     if (!toastEl) {
@@ -450,7 +603,6 @@
     setTimeout(() => toastEl.classList.remove('show'), 3500);
   }
 
-  // ── Auto Resize Textarea ──
   function autoResize(el) {
     el.addEventListener('input', () => {
       el.style.height = 'auto';
@@ -458,13 +610,11 @@
     });
   }
 
-  // ── Util ──
   function esc(s) {
     const d = document.createElement('span');
     d.textContent = s;
     return d.innerHTML;
   }
 
-  // ── Start ──
   init();
 })();

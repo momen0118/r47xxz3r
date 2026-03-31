@@ -228,6 +228,35 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   flex-shrink: 0;
 }
 
+/* Attachment preview */
+.attach-preview {
+  display: flex; gap: 8px; padding: 0 4px;
+  flex-wrap: wrap;
+}
+.attach-preview:empty { display: none; }
+
+.attach-thumb {
+  position: relative; width: 56px; height: 56px;
+  border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.attach-thumb img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.attach-thumb-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); color: var(--text);
+  font-size: 11px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; line-height: 1;
+}
+.attach-thumb-remove:hover { background: var(--danger); }
+
+.attach-btn {
+  flex-shrink: 0;
+}
+
 .input-wrapper {
   display: flex; align-items: flex-end; gap: 8px;
   background: var(--bg-raised);
@@ -255,6 +284,20 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .send-btn:not(:disabled):hover { color: var(--accent); background: var(--bg-hover); }
 .send-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ===== Images in messages ===== */
+.msg-images {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.msg-images img {
+  max-width: 200px; max-height: 200px;
+  border-radius: var(--radius); object-fit: cover;
+  border: 1px solid var(--border);
+}
+.msg.user .msg-images {
+  justify-content: flex-end;
+}
 
 /* ===== Modal ===== */
 .modal-overlay {
