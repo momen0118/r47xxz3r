@@ -126,26 +126,33 @@
 
   // ── Init ──
   function init() {
-    loadState();
-    cleanEmptyThreads();
-    renderThreadList();
-    if (activeId && threads.find(t => t.id === activeId)) {
-      switchThread(activeId);
-    } else if (threads.length) {
-      switchThread(threads[0].id);
-    } else {
-      renderMessages();
+    try {
+      loadState();
+      cleanEmptyThreads();
+      renderThreadList();
+      if (activeId && threads.find(t => t.id === activeId)) {
+        switchThread(activeId);
+      } else if (threads.length) {
+        switchThread(threads[0].id);
+      } else {
+        renderMessages();
+      }
+      bindEvents();
+      autoResize(messageInput);
+    } catch (e) {
+      console.error('Init error:', e);
+      document.body.insertAdjacentHTML('afterbegin',
+        `<div style="position:fixed;top:0;left:0;right:0;padding:12px;background:#a04040;color:#fff;font-size:13px;z-index:9999">${e.message}</div>`
+      );
     }
-    bindEvents();
-    autoResize(messageInput);
   }
 
   function loadState() {
-    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
-    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
-    systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
-    knowledgeInput.value = localStorage.getItem(SK.KNOWLEDGE) || '';
-    maxTokensInput.value = localStorage.getItem(SK.MAX_TOK) || '8192';
+    if (apiKeyInput)    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
+    if (modelSelect)    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
+    if (systemPrompt)   systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
+    if (knowledgeInput) knowledgeInput.value  = localStorage.getItem(SK.KNOWLEDGE) || '';
+    if (maxTokensInput) maxTokensInput.value  = localStorage.getItem(SK.MAX_TOK) || '8192';
     try { threads = JSON.parse(localStorage.getItem(SK.THREADS)) || []; } catch { threads = []; }
     activeId = localStorage.getItem(SK.ACTIVE) || null;
   }
@@ -162,11 +169,11 @@
   }
 
   function saveSettings() {
-    localStorage.setItem(SK.API_KEY,    apiKeyInput.value.trim());
-    localStorage.setItem(SK.MODEL,      modelSelect.value);
-    localStorage.setItem(SK.SYSTEM,     systemPrompt.value);
-    localStorage.setItem(SK.KNOWLEDGE,  knowledgeInput.value);
-    localStorage.setItem(SK.MAX_TOK,    maxTokensInput.value);
+    localStorage.setItem(SK.API_KEY,    (apiKeyInput    && apiKeyInput.value    || '').trim());
+    localStorage.setItem(SK.MODEL,      (modelSelect    && modelSelect.value    || 'claude-opus-4-6'));
+    localStorage.setItem(SK.SYSTEM,     (systemPrompt   && systemPrompt.value   || ''));
+    localStorage.setItem(SK.KNOWLEDGE,  (knowledgeInput && knowledgeInput.value || ''));
+    localStorage.setItem(SK.MAX_TOK,    (maxTokensInput && maxTokensInput.value || '8192'));
   }
 
   // ── Thread CRUD ──
@@ -556,11 +563,11 @@
 
   function openSettings() {
     closeSidebar();
-    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
-    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
-    systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
-    knowledgeInput.value = localStorage.getItem(SK.KNOWLEDGE) || '';
-    maxTokensInput.value = localStorage.getItem(SK.MAX_TOK) || '8192';
+    if (apiKeyInput)    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
+    if (modelSelect)    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
+    if (systemPrompt)   systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
+    if (knowledgeInput) knowledgeInput.value  = localStorage.getItem(SK.KNOWLEDGE) || '';
+    if (maxTokensInput) maxTokensInput.value  = localStorage.getItem(SK.MAX_TOK) || '8192';
     settingsOverlay.classList.add('open');
   }
 
