@@ -9,9 +9,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260331c">
+<link rel="stylesheet" href="style.css?v=20260401">
 </head>
 <body>
+
+<!-- ===== ロック画面 ===== -->
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-inner">
+    <div class="lock-icon">燈</div>
+    <input type="password" id="lockPassInput" placeholder="パスワード" autocomplete="off">
+    <button class="primary-btn" id="lockUnlockBtn">開く</button>
+    <div class="lock-hint" id="lockHint"></div>
+  </div>
+</div>
 
 <!-- ===== サイドバー（スレッド管理） ===== -->
 <div class="overlay" id="overlay"></div>
@@ -91,7 +101,11 @@
       <label class="field-label">System Prompt</label>
       <textarea id="systemPromptInput" rows="10" placeholder="指示文をここに…"></textarea>
 
-      <label class="field-label">Knowledge <span style="font-size:10px;opacity:0.5;text-transform:none">— systemに結合されます</span></label>
+      <label class="field-label" style="display:flex;align-items:center;gap:8px">
+        <span>Knowledge</span>
+        <input type="checkbox" id="knowledgeToggle" checked>
+        <span style="font-size:10px;opacity:0.5;text-transform:none">systemに結合</span>
+      </label>
       <textarea id="knowledgeInput" rows="6" placeholder="知識ファイルの内容をここに…"></textarea>
 
       <label class="field-label">Max Tokens</label>
@@ -122,6 +136,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20260331c"></script>
+<script src="crypto.js?v=20260401"></script>
+<script src="app.js?v=20260401"></script>
 </body>
 </html>

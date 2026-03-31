@@ -288,7 +288,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* ===== Images in messages ===== */
 .msg-images {
   display: flex; gap: 6px; flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .msg-images img {
   max-width: 200px; max-height: 200px;
@@ -297,6 +297,39 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .msg.user .msg-images {
   justify-content: flex-end;
+}
+
+/* ===== Message actions ===== */
+.msg-actions {
+  display: flex; gap: 4px; margin-top: 4px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.msg:hover .msg-actions,
+.msg-actions:focus-within { opacity: 1; }
+/* On mobile, always show lightly */
+@media (hover: none) {
+  .msg-actions { opacity: 0.5; }
+}
+.msg.user .msg-actions { justify-content: flex-end; }
+
+.msg-action {
+  padding: 2px 8px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-faint); cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+  letter-spacing: 0.03em;
+}
+.msg-action:hover { color: var(--text-dim); background: var(--bg-hover); }
+
+/* ===== Checkbox ===== */
+input[type="checkbox"] {
+  accent-color: var(--walnut-lt);
+  width: 14px; height: 14px; cursor: pointer;
+}
+
+/* ===== Knowledge disabled state ===== */
+#knowledgeInput.disabled-look {
+  opacity: 0.35; pointer-events: none;
 }
 
 /* ===== Modal ===== */
@@ -393,4 +426,37 @@ select option { background: var(--bg-raised); color: var(--text); }
 /* ===== Safe area for iPhone ===== */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .input-area { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+
+/* ===== Lock Screen ===== */
+.lock-screen {
+  position: fixed; inset: 0; z-index: 500;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.3s;
+}
+.lock-screen.hidden {
+  opacity: 0; pointer-events: none;
+}
+.lock-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  width: 260px;
+}
+.lock-icon {
+  font-size: 36px; color: var(--border); font-weight: 500;
+  opacity: 0.5; margin-bottom: 8px; user-select: none;
+}
+.lock-inner input[type="password"] {
+  width: 100%; padding: 12px 14px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font-mono); font-size: 14px;
+  outline: none; text-align: center;
+  transition: border-color 0.15s;
+}
+.lock-inner input:focus { border-color: var(--border-lt); }
+.lock-inner .primary-btn { width: 100%; }
+.lock-hint {
+  font-size: 12px; color: var(--danger);
+  min-height: 16px; text-align: center;
 }
