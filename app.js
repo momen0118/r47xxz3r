@@ -7,19 +7,24 @@
 
   // ── Storage Keys ──
   const SK = {
-    API_KEY:  'aki_apikey',
-    MODEL:    'aki_model',
-    SYSTEM:   'aki_system',
-    THREADS:  'aki_threads',
-    ACTIVE:   'aki_active',
-    MAX_TOK:  'aki_maxtok',
+    API_KEY:   'aki_apikey',
+    MODEL:     'aki_model',
+    SYSTEM:    'aki_system',
+    KNOWLEDGE: 'aki_knowledge',
+    THREADS:   'aki_threads',
+    ACTIVE:    'aki_active',
+    MAX_TOK:   'aki_maxtok',
   };
 
   // ── State ──
-  let threads   = [];      // [{ id, name, messages: [{role, content}], created }]
+  let threads   = [];
   let activeId  = null;
   let streaming = false;
   let abortCtrl = null;
+
+  // ── Mobile detection ──
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+                   ('ontouchstart' in window);
 
   // ── DOM ──
   const $ = id => document.getElementById(id);
@@ -37,6 +42,7 @@
   const apiKeyInput     = $('apiKeyInput');
   const modelSelect     = $('modelSelect');
   const systemPrompt    = $('systemPromptInput');
+  const knowledgeInput  = $('knowledgeInput');
   const maxTokensInput  = $('maxTokensInput');
   const renameOverlay   = $('renameOverlay');
   const renameInput     = $('renameInput');
@@ -44,19 +50,26 @@
   // ── Init ──
   function init() {
     loadState();
+    cleanEmptyThreads();
     renderThreadList();
-    if (activeId) switchThread(activeId);
-    else if (threads.length) switchThread(threads[0].id);
+    if (activeId && threads.find(t => t.id === activeId)) {
+      switchThread(activeId);
+    } else if (threads.length) {
+      switchThread(threads[0].id);
+    } else {
+      renderMessages();
+    }
     bindEvents();
     autoResize(messageInput);
   }
 
   // ── Persistence ──
   function loadState() {
-    apiKeyInput.value   = localStorage.getItem(SK.API_KEY) || '';
-    modelSelect.value   = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
-    systemPrompt.value  = localStorage.getItem(SK.SYSTEM)   || '';
-    maxTokensInput.value = localStorage.getItem(SK.MAX_TOK) || '4096';
+    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
+    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
+    systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
+    knowledgeInput.value = localStorage.getItem(SK.KNOWLEDGE) || '';
+    maxTokensInput.value = localStorage.getItem(SK.MAX_TOK) || '8192';
     try { threads = JSON.parse(localStorage.getItem(SK.THREADS)) || []; } catch { threads = []; }
     activeId = localStorage.getItem(SK.ACTIVE) || null;
   }
@@ -67,14 +80,16 @@
   }
 
   function saveSettings() {
-    localStorage.setItem(SK.API_KEY,  apiKeyInput.value.trim());
-    localStorage.setItem(SK.MODEL,    modelSelect.value);
-    localStorage.setItem(SK.SYSTEM,   systemPrompt.value);
-    localStorage.setItem(SK.MAX_TOK,  maxTokensInput.value);
+    localStorage.setItem(SK.API_KEY,    apiKeyInput.value.trim());
+    localStorage.setItem(SK.MODEL,      modelSelect.value);
+    localStorage.setItem(SK.SYSTEM,     systemPrompt.value);
+    localStorage.setItem(SK.KNOWLEDGE,  knowledgeInput.value);
+    localStorage.setItem(SK.MAX_TOK,    maxTokensInput.value);
   }
 
   // ── Thread CRUD ──
   function createThread(name) {
+    cleanEmptyThreads();
     const t = {
       id: 't_' + Date.now(),
       name: name || '新しいスレッド',
@@ -104,9 +119,26 @@
     if (t) { t.name = name; saveThreads(); renderThreadList(); updateTopbar(); }
   }
 
+  function cleanEmptyThreads() {
+    const before = threads.length;
+    threads = threads.filter(t => t.messages.length > 0);
+    if (threads.length !== before) {
+      if (activeId && !threads.find(t => t.id === activeId)) {
+        activeId = threads.length ? threads[0].id : null;
+      }
+      saveThreads();
+    }
+  }
+
   function getActive() { return threads.find(t => t.id === activeId) || null; }
 
   function switchThread(id) {
+    if (activeId && activeId !== id) {
+      const prev = threads.find(t => t.id === activeId);
+      if (prev && prev.messages.length === 0) {
+        threads = threads.filter(t => t.id !== activeId);
+      }
+    }
     activeId = id;
     saveThreads();
     renderThreadList();
@@ -119,6 +151,7 @@
   function renderThreadList() {
     threadList.innerHTML = '';
     threads.forEach(t => {
+      if (t.messages.length === 0 && t.id !== activeId) return;
       const el = document.createElement('div');
       el.className = 'thread-item' + (t.id === activeId ? ' active' : '');
       el.innerHTML = `
@@ -135,7 +168,6 @@
       threadList.appendChild(el);
     });
 
-    // bind actions
     threadList.querySelectorAll('.rename-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -185,6 +217,16 @@
     });
   }
 
+  // ── Build system prompt ──
+  function buildSystemPrompt() {
+    const sys  = localStorage.getItem(SK.SYSTEM) || '';
+    const know = localStorage.getItem(SK.KNOWLEDGE) || '';
+    const parts = [];
+    if (sys.trim())  parts.push(sys.trim());
+    if (know.trim()) parts.push('<knowledge>\n' + know.trim() + '\n</knowledge>');
+    return parts.join('\n\n');
+  }
+
   // ── API Call (Streaming) ──
   async function sendMessage(text) {
     if (streaming) return;
@@ -194,22 +236,24 @@
     let t = getActive();
     if (!t) t = createThread();
 
-    // Add user message
     t.messages.push({ role: 'user', content: text });
     saveThreads();
+
+    emptyState.style.display = 'none';
+    if (emptyState.parentNode === chatMessages) {
+      chatMessages.removeChild(emptyState);
+    }
+
     chatMessages.appendChild(createMsgEl('user', text));
     scrollToBottom();
 
-    // Auto-name first message
     if (t.messages.length === 1 && t.name === '新しいスレッド') {
       const preview = text.slice(0, 20) + (text.length > 20 ? '…' : '');
       renameThread(t.id, preview);
     }
 
-    // Build messages for API
     const apiMessages = t.messages.map(m => ({ role: m.role, content: m.content }));
 
-    // Create assistant placeholder
     const asstEl = document.createElement('div');
     asstEl.className = 'msg assistant streaming';
     asstEl.innerHTML = `<div class="msg-role">燈</div><div class="msg-content"></div>`;
@@ -217,16 +261,15 @@
     const contentEl = asstEl.querySelector('.msg-content');
     scrollToBottom();
 
-    // Stream
     streaming = true;
     sendBtn.disabled = true;
     abortCtrl = new AbortController();
     let fullResponse = '';
 
     try {
-      const sysPrompt = localStorage.getItem(SK.SYSTEM) || '';
-      const model = localStorage.getItem(SK.MODEL) || 'claude-opus-4-6';
-      const maxTok = parseInt(localStorage.getItem(SK.MAX_TOK)) || 4096;
+      const model    = localStorage.getItem(SK.MODEL) || 'claude-opus-4-6';
+      const maxTok   = parseInt(localStorage.getItem(SK.MAX_TOK)) || 8192;
+      const sysPrompt = buildSystemPrompt();
 
       const body = {
         model,
@@ -234,7 +277,7 @@
         stream: true,
         messages: apiMessages,
       };
-      if (sysPrompt.trim()) body.system = sysPrompt.trim();
+      if (sysPrompt) body.system = sysPrompt;
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -282,12 +325,10 @@
       }
     } catch (err) {
       if (err.name === 'AbortError') {
-        // user cancelled
+        // cancelled
       } else {
         showToast(err.message);
-        if (!fullResponse) {
-          asstEl.remove();
-        }
+        if (!fullResponse) asstEl.remove();
       }
     } finally {
       streaming = false;
@@ -304,34 +345,32 @@
 
   // ── UI Events ──
   function bindEvents() {
-    // Sidebar
     menuBtn.addEventListener('click', toggleSidebar);
     overlay.addEventListener('click', closeSidebar);
     newThreadBtn.addEventListener('click', () => createThread());
 
-    // Settings
     $('openSettingsBtn').addEventListener('click', openSettings);
     $('topbarSettingsBtn').addEventListener('click', openSettings);
     $('closeSettingsBtn').addEventListener('click', closeSettings);
     $('saveSettingsBtn').addEventListener('click', () => { saveSettings(); closeSettings(); });
     settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
 
-    // Toggle key visibility
     $('toggleKeyVis').addEventListener('click', () => {
-      const inp = apiKeyInput;
-      inp.type = inp.type === 'password' ? 'text' : 'password';
+      apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
     });
 
-    // Rename
     $('closeRenameBtn').addEventListener('click', closeRename);
     renameOverlay.addEventListener('click', (e) => { if (e.target === renameOverlay) closeRename(); });
 
-    // Send
+    // Send — mobile: Enter = newline only, desktop: Enter = send
     sendBtn.addEventListener('click', handleSend);
     messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-        e.preventDefault();
-        handleSend();
+      if (e.key === 'Enter' && !e.isComposing) {
+        if (isMobile) return; // let Enter insert newline
+        if (!e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
       }
     });
     messageInput.addEventListener('input', updateSendBtn);
@@ -363,6 +402,11 @@
 
   function openSettings() {
     closeSidebar();
+    apiKeyInput.value    = localStorage.getItem(SK.API_KEY) || '';
+    modelSelect.value    = localStorage.getItem(SK.MODEL)   || 'claude-opus-4-6';
+    systemPrompt.value   = localStorage.getItem(SK.SYSTEM)  || '';
+    knowledgeInput.value = localStorage.getItem(SK.KNOWLEDGE) || '';
+    maxTokensInput.value = localStorage.getItem(SK.MAX_TOK) || '8192';
     settingsOverlay.classList.add('open');
   }
 
@@ -384,7 +428,7 @@
       closeRename();
     };
     renameInput.onkeydown = (e) => {
-      if (e.key === 'Enter') { $('saveRenameBtn').click(); }
+      if (e.key === 'Enter') $('saveRenameBtn').click();
     };
   }
 

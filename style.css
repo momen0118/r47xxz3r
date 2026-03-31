@@ -175,6 +175,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   animation: msgIn 0.2s ease;
 }
 
+.msg.user {
+  display: flex; flex-direction: column; align-items: flex-end;
+}
+
 @keyframes msgIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -195,6 +199,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 .msg.user .msg-content {
   color: var(--text-dim);
+  background: var(--surface);
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  border-top-right-radius: 2px;
+  max-width: 85%;
 }
 
 .msg.assistant .msg-content {
