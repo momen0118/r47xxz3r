@@ -383,12 +383,15 @@
     let actionsHtml = '<div class="msg-actions">';
     actionsHtml += `<button class="msg-action copy-action" data-idx="${msgIndex}">copy</button>`;
     if (role === 'user') actionsHtml += `<button class="msg-action edit-action" data-idx="${msgIndex}">edit</button>`;
+    if (role === 'assistant') actionsHtml += `<button class="msg-action retry-action" data-idx="${msgIndex}">retry</button>`;
     actionsHtml += '</div>';
     el.innerHTML = `<div class="msg-role">${label}</div>${imagesHtml}<div class="msg-content"></div>${actionsHtml}`;
     el.querySelector('.msg-content').textContent = content;
     el.querySelector('.copy-action').addEventListener('click', () => copyToClipboard(content));
     const editBtn = el.querySelector('.edit-action');
     if (editBtn) editBtn.addEventListener('click', () => { if (!streaming) startEdit(msgIndex); });
+    const retryBtn = el.querySelector('.retry-action');
+    if (retryBtn) retryBtn.addEventListener('click', () => { if (!streaming) startRetry(msgIndex); });
     return el;
   }
 
@@ -418,6 +421,31 @@
     saveThreads();
     renderMessages();
     updateSendBtn();
+  }
+
+  async function startRetry(msgIndex) {
+    const t = getActive();
+    if (!t) return;
+    const msg = t.messages[msgIndex];
+    if (!msg || msg.role !== 'assistant') return;
+
+    // Remove this assistant message and everything after it
+    t.messages = t.messages.slice(0, msgIndex);
+    await saveThreads();
+    renderMessages();
+
+    // Find the last user message and re-send
+    const lastUserMsg = t.messages[t.messages.length - 1];
+    if (!lastUserMsg || lastUserMsg.role !== 'user') return;
+
+    // Remove the user message too (sendMessage will re-add it)
+    const userText = lastUserMsg.text || lastUserMsg.content || '';
+    const userImages = lastUserMsg.apiImages || null;
+    t.messages = t.messages.slice(0, -1);
+    await saveThreads();
+    renderMessages();
+
+    sendMessage(userText, userImages);
   }
 
   function updateTopbar() {
