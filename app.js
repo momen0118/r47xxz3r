@@ -1,5 +1,5 @@
 /* ============================
-   燈 — Chat Client Logic v4
+   ⊹ — Chat Client Logic v4
    Encrypted localStorage
    ============================ */
 
@@ -15,6 +15,7 @@
     THREADS:   'aki_threads',
     ACTIVE:    'aki_active',
     MAX_TOK:   'aki_maxtok',
+    PRESETS:   'aki_presets',
   };
 
   let threads   = [];
@@ -33,6 +34,8 @@
   let messageInput, sendBtn, topbarTitle, settingsOverlay, apiKeyInput, modelSelect;
   let systemPrompt, knowledgeInput, knowledgeToggle, maxTokensInput;
   let renameOverlay, renameInput, imageInput, attachBtn, attachPreview;
+  let presetSelect, presetSaveBtn, presetDelBtn;
+  let presets = [];
 
   // Lock screen refs
   const lockScreen   = $('lockScreen');
@@ -99,6 +102,7 @@
         if (!oldData[SK.MAX_TOK])  await AkiCrypto.secureSet(SK.MAX_TOK, '8192');
         if (!oldData[SK.KNOW_ON])  await AkiCrypto.secureSet(SK.KNOW_ON, '1');
         if (!oldData[SK.THREADS])  await AkiCrypto.secureSet(SK.THREADS, '[]');
+        if (!oldData[SK.PRESETS])  await AkiCrypto.secureSet(SK.PRESETS, '[]');
       } else {
         const ok = await AkiCrypto.unlock(pw);
         if (!ok) {
@@ -148,6 +152,9 @@
     imageInput      = $('imageInput');
     attachBtn       = $('attachBtn');
     attachPreview   = $('attachPreview');
+    presetSelect    = $('presetSelect');
+    presetSaveBtn   = $('presetSaveBtn');
+    presetDelBtn    = $('presetDelBtn');
 
     try {
       await loadState();
@@ -206,6 +213,11 @@
     } catch { threads = []; }
 
     activeId = (await sget(SK.ACTIVE)) || null;
+
+    try {
+      const rawP = await sget(SK.PRESETS);
+      presets = rawP ? JSON.parse(rawP) : [];
+    } catch { presets = []; }
   }
 
   function syncKnowledgeLook() {
@@ -225,6 +237,78 @@
     await sset(SK.KNOWLEDGE, (knowledgeInput && knowledgeInput.value || ''));
     await sset(SK.KNOW_ON,   (knowledgeToggle && knowledgeToggle.checked) ? '1' : '0');
     await sset(SK.MAX_TOK,   (maxTokensInput && maxTokensInput.value || '8192'));
+  }
+
+  // ══════════════════════════════════
+  // Presets
+  // ══════════════════════════════════
+
+  async function savePresets() {
+    await sset(SK.PRESETS, JSON.stringify(presets));
+  }
+
+  function renderPresetSelect(selectedId) {
+    if (!presetSelect) return;
+    presetSelect.innerHTML = '<option value="">— プリセット —</option>';
+    presets.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.id === selectedId) opt.selected = true;
+      presetSelect.appendChild(opt);
+    });
+    if (presetDelBtn) presetDelBtn.style.display = presetSelect.value ? '' : 'none';
+  }
+
+  function loadPresetIntoFields(preset) {
+    if (!preset) return;
+    if (systemPrompt)    systemPrompt.value   = preset.system || '';
+    if (knowledgeInput)  knowledgeInput.value  = preset.knowledge || '';
+    if (knowledgeToggle) {
+      knowledgeToggle.checked = preset.knowOn !== false;
+      syncKnowledgeLook();
+    }
+  }
+
+  async function handlePresetSave() {
+    const sys  = systemPrompt  ? systemPrompt.value.trim()  : '';
+    const know = knowledgeInput ? knowledgeInput.value.trim() : '';
+    const knowOn = knowledgeToggle ? knowledgeToggle.checked : true;
+    if (!sys && !know) { showToast('保存する内容がありません'); return; }
+
+    const currentId = presetSelect ? presetSelect.value : '';
+    const currentPreset = currentId ? presets.find(p => p.id === currentId) : null;
+    const defaultName = currentPreset ? currentPreset.name : '';
+
+    const name = prompt('プリセット名', defaultName);
+    if (!name || !name.trim()) return;
+
+    if (currentPreset && name.trim() === currentPreset.name) {
+      // Overwrite existing
+      currentPreset.system = sys;
+      currentPreset.knowledge = know;
+      currentPreset.knowOn = knowOn;
+    } else {
+      // New preset
+      const p = { id: 'ps_' + Date.now(), name: name.trim(), system: sys, knowledge: know, knowOn };
+      presets.push(p);
+      renderPresetSelect(p.id);
+    }
+    await savePresets();
+    renderPresetSelect(presetSelect.value);
+    showToast('保存しました');
+  }
+
+  async function handlePresetDelete() {
+    const id = presetSelect ? presetSelect.value : '';
+    if (!id) return;
+    const p = presets.find(p => p.id === id);
+    if (!p) return;
+    if (!confirm(`「${p.name}」を削除する？`)) return;
+    presets = presets.filter(p => p.id !== id);
+    await savePresets();
+    renderPresetSelect('');
+    showToast('削除しました');
   }
 
   // ══════════════════════════════════
@@ -375,7 +459,6 @@
   function createMsgEl(role, content, images, msgIndex) {
     const el = document.createElement('div');
     el.className = `msg ${role}`;
-    const label = role === 'user' ? 'you' : '燈';
     let imagesHtml = '';
     if (images && images.length > 0) {
       imagesHtml = '<div class="msg-images">' + images.map(img => `<img src="${img.thumbnail || img}" alt="">`).join('') + '</div>';
@@ -385,7 +468,7 @@
     if (role === 'user') actionsHtml += `<button class="msg-action edit-action" data-idx="${msgIndex}">edit</button>`;
     if (role === 'assistant') actionsHtml += `<button class="msg-action retry-action" data-idx="${msgIndex}">retry</button>`;
     actionsHtml += '</div>';
-    el.innerHTML = `<div class="msg-role">${label}</div>${imagesHtml}<div class="msg-content"></div>${actionsHtml}`;
+    el.innerHTML = `${imagesHtml}<div class="msg-content"></div>${actionsHtml}`;
     el.querySelector('.msg-content').textContent = content;
     el.querySelector('.copy-action').addEventListener('click', () => copyToClipboard(content));
     const editBtn = el.querySelector('.edit-action');
@@ -450,7 +533,7 @@
 
   function updateTopbar() {
     const t = getActive();
-    topbarTitle.textContent = t ? t.name : '燈';
+    topbarTitle.textContent = t ? t.name : '⊹';
   }
 
   function scrollToBottom() {
@@ -518,7 +601,7 @@
     const apiMessages = buildApiMessages(t.messages);
     const asstEl = document.createElement('div');
     asstEl.className = 'msg assistant streaming';
-    asstEl.innerHTML = `<div class="msg-role">燈</div><div class="msg-content"></div>`;
+    asstEl.innerHTML = `<div class="msg-content"></div>`;
     chatMessages.appendChild(asstEl);
     const contentEl = asstEl.querySelector('.msg-content');
     scrollToBottom();
@@ -616,6 +699,18 @@
 
     if (knowledgeToggle) knowledgeToggle.addEventListener('change', syncKnowledgeLook);
 
+    // Presets
+    if (presetSelect) {
+      presetSelect.addEventListener('change', () => {
+        const id = presetSelect.value;
+        const p = presets.find(p => p.id === id);
+        if (p) loadPresetIntoFields(p);
+        if (presetDelBtn) presetDelBtn.style.display = id ? '' : 'none';
+      });
+    }
+    if (presetSaveBtn) presetSaveBtn.addEventListener('click', handlePresetSave);
+    if (presetDelBtn)  presetDelBtn.addEventListener('click', handlePresetDelete);
+
     $('closeRenameBtn').addEventListener('click', closeRename);
     renameOverlay.addEventListener('click', (e) => { if (e.target === renameOverlay) closeRename(); });
 
@@ -673,6 +768,7 @@
       syncKnowledgeLook();
     }
     if (maxTokensInput)  maxTokensInput.value  = (await sget(SK.MAX_TOK)) || '8192';
+    renderPresetSelect('');
     settingsOverlay.classList.add('open');
   }
 

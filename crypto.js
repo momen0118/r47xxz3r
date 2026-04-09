@@ -1,5 +1,5 @@
 /* ============================
-   燈 — Encryption Layer
+   ⊹ — Encryption Layer
    Web Crypto API: PBKDF2 → AES-GCM
    ============================ */
 
