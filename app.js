@@ -453,7 +453,7 @@
     }
     emptyState.style.display = 'none';
     t.messages.forEach((m, idx) => chatMessages.appendChild(createMsgEl(m.role, m.text || m.content, m.images, idx)));
-    scrollToBottom();
+    scrollToBottom(true);
   }
 
   function createMsgEl(role, content, images, msgIndex) {
@@ -536,7 +536,13 @@
     topbarTitle.textContent = t ? t.name : '⊹';
   }
 
-  function scrollToBottom() {
+  function isNearBottom() {
+    const threshold = 80;
+    return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < threshold;
+  }
+
+  function scrollToBottom(force) {
+    if (!force && !isNearBottom()) return;
     requestAnimationFrame(() => { chatMessages.scrollTop = chatMessages.scrollHeight; });
   }
 
@@ -592,7 +598,7 @@
     if (emptyState.parentNode === chatMessages) chatMessages.removeChild(emptyState);
 
     chatMessages.appendChild(createMsgEl('user', text, msgObj.images, t.messages.length - 1));
-    scrollToBottom();
+    scrollToBottom(true);
 
     if (t.messages.length === 1 && t.name === '新しいスレッド') {
       renameThread(t.id, text.slice(0, 20) + (text.length > 20 ? '…' : ''));
@@ -604,7 +610,7 @@
     asstEl.innerHTML = `<div class="msg-content"></div>`;
     chatMessages.appendChild(asstEl);
     const contentEl = asstEl.querySelector('.msg-content');
-    scrollToBottom();
+    scrollToBottom(true);
 
     streaming = true;
     sendBtn.disabled = true;
