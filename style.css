@@ -1,5 +1,5 @@
 /* ============================
-   ⊹ — Chat Client Styles
+   燈 — Chat Client Styles
    ============================ */
 
 :root {
@@ -400,14 +400,13 @@ select option { background: var(--bg-raised); color: var(--text); }
 .api-key-row { display: flex; gap: 4px; }
 .api-key-row input { flex: 1; }
 
-/* ===== Preset Row ===== */
+/* ===== Preset row ===== */
 .preset-row {
-  display: flex; align-items: center; gap: 4px;
-  margin-bottom: 6px;
+  display: flex; gap: 4px; align-items: center;
 }
 .preset-row select { flex: 1; }
 .preset-action-btn {
-  width: 34px; height: 34px; flex-shrink: 0;
+  width: 32px; height: 32px; flex-shrink: 0;
 }
 .preset-action-btn.danger:hover { color: var(--danger); }
 

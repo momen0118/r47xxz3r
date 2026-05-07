@@ -443,7 +443,8 @@
     });
   }
 
-  function renderMessages() {
+  function renderMessages(forceScroll) {
+    if (forceScroll === undefined) forceScroll = true;
     chatMessages.innerHTML = '';
     const t = getActive();
     if (!t || t.messages.length === 0) {
@@ -453,7 +454,7 @@
     }
     emptyState.style.display = 'none';
     t.messages.forEach((m, idx) => chatMessages.appendChild(createMsgEl(m.role, m.text || m.content, m.images, idx)));
-    scrollToBottom(true);
+    if (forceScroll) scrollToBottom(true);
   }
 
   function createMsgEl(role, content, images, msgIndex) {
@@ -536,14 +537,18 @@
     topbarTitle.textContent = t ? t.name : '⊹';
   }
 
+  let autoScroll = true;
+
   function isNearBottom() {
-    const threshold = 80;
-    return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < threshold;
+    return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 10;
   }
 
   function scrollToBottom(force) {
+    if (!force && !autoScroll) return;
     if (!force && !isNearBottom()) return;
-    requestAnimationFrame(() => { chatMessages.scrollTop = chatMessages.scrollHeight; });
+    requestAnimationFrame(() => {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
   }
 
   // ══════════════════════════════════
@@ -555,10 +560,11 @@
     const know   = (await sget(SK.KNOWLEDGE)) || '';
     const knowOn = await sget(SK.KNOW_ON);
     const isOn   = knowOn === null ? true : knowOn === '1';
-    const parts  = [];
-    if (sys.trim())            parts.push(sys.trim());
-    if (isOn && know.trim())   parts.push('<knowledge>\n' + know.trim() + '\n</knowledge>');
-    return parts.join('\n\n');
+    const blocks = [];
+    if (sys.trim()) blocks.push({ type: 'text', text: sys.trim() });
+    if (isOn && know.trim()) blocks.push({ type: 'text', text: '<knowledge>\n' + know.trim() + '\n</knowledge>' });
+    if (blocks.length > 0) blocks[blocks.length - 1].cache_control = { type: 'ephemeral' };
+    return blocks;
   }
 
   function buildUserContent(text, images) {
@@ -613,6 +619,7 @@
     scrollToBottom(true);
 
     streaming = true;
+    autoScroll = true;
     sendBtn.disabled = true;
     abortCtrl = new AbortController();
     let fullResponse = '';
@@ -620,10 +627,10 @@
     try {
       const model    = (await sget(SK.MODEL)) || 'claude-opus-4-6';
       const maxTok   = parseInt((await sget(SK.MAX_TOK)) || '8192');
-      const sysPrompt = await buildSystemPrompt();
+      const sysBlocks = await buildSystemPrompt();
 
       const body = { model, max_tokens: maxTok, stream: true, messages: apiMessages };
-      if (sysPrompt) body.system = sysPrompt;
+      if (sysBlocks.length > 0) body.system = sysBlocks;
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -631,6 +638,7 @@
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'prompt-caching-2024-07-31',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify(body),
@@ -678,8 +686,9 @@
       if (fullResponse) {
         t.messages.push({ role: 'assistant', text: fullResponse, content: fullResponse });
         await saveThreads();
-        renderMessages();
+        renderMessages(autoScroll);
       }
+      autoScroll = true;
       updateSendBtn();
     }
   }
@@ -740,6 +749,21 @@
     });
     messageInput.addEventListener('input', updateSendBtn);
     messageInput.addEventListener('compositionend', updateSendBtn);
+
+    // ストリーミング中にユーザーが上方向にスクロールしたら自動追従を切る
+    chatMessages.addEventListener('wheel', (e) => {
+      if (streaming && e.deltaY < 0) autoScroll = false;
+    }, { passive: true });
+
+    let touchStartY = 0;
+    chatMessages.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    chatMessages.addEventListener('touchmove', (e) => {
+      if (streaming && e.touches.length === 1 && e.touches[0].clientY > touchStartY) {
+        autoScroll = false;
+      }
+    }, { passive: true });
   }
 
   function handleSend() {
