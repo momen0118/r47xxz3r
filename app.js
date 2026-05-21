@@ -16,6 +16,15 @@
     ACTIVE:    'aki_active',
     MAX_TOK:   'aki_maxtok',
     PRESETS:   'aki_presets',
+    EFFORT:    'aki_effort',
+  };
+
+  // Effort → budget_tokens マッピング（none = thinking 無効）
+  const EFFORT_MAP = {
+    none:   0,
+    low:    2048,
+    medium: 8192,
+    high:   16384,
   };
 
   let threads   = [];
@@ -32,7 +41,7 @@
   // DOM refs (set after unlock)
   let overlay, sidebar, threadList, menuBtn, newThreadBtn, chatMessages, emptyState;
   let messageInput, sendBtn, topbarTitle, settingsOverlay, apiKeyInput, modelSelect;
-  let systemPrompt, knowledgeInput, knowledgeToggle, maxTokensInput;
+  let systemPrompt, knowledgeInput, knowledgeToggle, maxTokensInput, effortSelect;
   let renameOverlay, renameInput, imageInput, attachBtn, attachPreview;
   let presetSelect, presetSaveBtn, presetDelBtn;
   let presets = [];
@@ -98,11 +107,12 @@
           }
         }
         // Ensure defaults for keys that didn't exist
-        if (!oldData[SK.MODEL])    await AkiCrypto.secureSet(SK.MODEL, 'claude-opus-4-6');
+        if (!oldData[SK.MODEL])    await AkiCrypto.secureSet(SK.MODEL, 'claude-opus-4-7');
         if (!oldData[SK.MAX_TOK])  await AkiCrypto.secureSet(SK.MAX_TOK, '8192');
         if (!oldData[SK.KNOW_ON])  await AkiCrypto.secureSet(SK.KNOW_ON, '1');
         if (!oldData[SK.THREADS])  await AkiCrypto.secureSet(SK.THREADS, '[]');
         if (!oldData[SK.PRESETS])  await AkiCrypto.secureSet(SK.PRESETS, '[]');
+        if (!oldData[SK.EFFORT])   await AkiCrypto.secureSet(SK.EFFORT, 'high');
       } else {
         const ok = await AkiCrypto.unlock(pw);
         if (!ok) {
@@ -147,6 +157,7 @@
     knowledgeInput  = $('knowledgeInput');
     knowledgeToggle = $('knowledgeToggle');
     maxTokensInput  = $('maxTokensInput');
+    effortSelect    = $('effortSelect');
     renameOverlay   = $('renameOverlay');
     renameInput     = $('renameInput');
     imageInput      = $('imageInput');
@@ -197,7 +208,7 @@
 
   async function loadState() {
     if (apiKeyInput)     apiKeyInput.value    = (await sget(SK.API_KEY)) || '';
-    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-6';
+    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-7';
     if (systemPrompt)    systemPrompt.value   = (await sget(SK.SYSTEM))  || '';
     if (knowledgeInput)  knowledgeInput.value  = (await sget(SK.KNOWLEDGE)) || '';
     if (knowledgeToggle) {
@@ -206,6 +217,7 @@
       syncKnowledgeLook();
     }
     if (maxTokensInput)  maxTokensInput.value  = (await sget(SK.MAX_TOK)) || '8192';
+    if (effortSelect)    effortSelect.value    = (await sget(SK.EFFORT)) || 'high';
 
     try {
       const raw = await sget(SK.THREADS);
@@ -232,11 +244,12 @@
 
   async function saveSettings() {
     await sset(SK.API_KEY,   (apiKeyInput    && apiKeyInput.value    || '').trim());
-    await sset(SK.MODEL,     (modelSelect    && modelSelect.value    || 'claude-opus-4-6'));
+    await sset(SK.MODEL,     (modelSelect    && modelSelect.value    || 'claude-opus-4-7'));
     await sset(SK.SYSTEM,    (systemPrompt   && systemPrompt.value   || ''));
     await sset(SK.KNOWLEDGE, (knowledgeInput && knowledgeInput.value || ''));
     await sset(SK.KNOW_ON,   (knowledgeToggle && knowledgeToggle.checked) ? '1' : '0');
     await sset(SK.MAX_TOK,   (maxTokensInput && maxTokensInput.value || '8192'));
+    await sset(SK.EFFORT,    (effortSelect && effortSelect.value || 'high'));
   }
 
   // ══════════════════════════════════
@@ -625,12 +638,20 @@
     let fullResponse = '';
 
     try {
-      const model    = (await sget(SK.MODEL)) || 'claude-opus-4-6';
+      const model    = (await sget(SK.MODEL)) || 'claude-opus-4-7';
       const maxTok   = parseInt((await sget(SK.MAX_TOK)) || '8192');
+      const effort   = (await sget(SK.EFFORT)) || 'none';
+      const budget   = EFFORT_MAP[effort] || 0;
       const sysBlocks = await buildSystemPrompt();
 
       const body = { model, max_tokens: maxTok, stream: true, messages: apiMessages };
       if (sysBlocks.length > 0) body.system = sysBlocks;
+
+      if (budget > 0) {
+        // thinkingを有効化。max_tokensはbudget_tokensより大きい必要がある
+        if (body.max_tokens <= budget) body.max_tokens = budget + 4096;
+        body.thinking = { type: 'enabled', budget_tokens: budget };
+      }
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -789,7 +810,7 @@
   async function openSettings() {
     closeSidebar();
     if (apiKeyInput)     apiKeyInput.value    = (await sget(SK.API_KEY)) || '';
-    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-6';
+    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-7';
     if (systemPrompt)    systemPrompt.value   = (await sget(SK.SYSTEM))  || '';
     if (knowledgeInput)  knowledgeInput.value  = (await sget(SK.KNOWLEDGE)) || '';
     if (knowledgeToggle) {
@@ -798,6 +819,7 @@
       syncKnowledgeLook();
     }
     if (maxTokensInput)  maxTokensInput.value  = (await sget(SK.MAX_TOK)) || '8192';
+    if (effortSelect)    effortSelect.value    = (await sget(SK.EFFORT)) || 'high';
     renderPresetSelect('');
     settingsOverlay.classList.add('open');
   }
