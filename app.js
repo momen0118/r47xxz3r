@@ -647,10 +647,18 @@
       const body = { model, max_tokens: maxTok, stream: true, messages: apiMessages };
       if (sysBlocks.length > 0) body.system = sysBlocks;
 
-      if (budget > 0) {
-        // thinkingを有効化。max_tokensはbudget_tokensより大きい必要がある
-        if (body.max_tokens <= budget) body.max_tokens = budget + 4096;
-        body.thinking = { type: 'enabled', budget_tokens: budget };
+      if (effort !== 'none') {
+        // Opus 4.7以降: thinking.type=adaptive + output_config.effort
+        // それ以前: thinking.type=enabled + budget_tokens
+        const isAdaptive = /opus-4-7/.test(model);
+        if (isAdaptive) {
+          body.thinking = { type: 'adaptive' };
+          body.output_config = { effort: effort };
+          if (body.max_tokens <= budget) body.max_tokens = budget + 4096;
+        } else if (budget > 0) {
+          if (body.max_tokens <= budget) body.max_tokens = budget + 4096;
+          body.thinking = { type: 'enabled', budget_tokens: budget };
+        }
       }
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
