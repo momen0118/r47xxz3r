@@ -650,7 +650,7 @@
       if (effort !== 'none') {
         // Opus 4.7以降: thinking.type=adaptive + output_config.effort
         // それ以前: thinking.type=enabled + budget_tokens
-        const isAdaptive = /opus-4-7/.test(model);
+        const isAdaptive = /opus-4-[78]/.test(model);
         if (isAdaptive) {
           body.thinking = { type: 'adaptive' };
           body.output_config = { effort: effort };
