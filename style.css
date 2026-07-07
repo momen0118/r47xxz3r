@@ -213,6 +213,44 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .msg-content p { margin-bottom: 0.6em; }
 .msg-content p:last-child { margin-bottom: 0; }
 
+/* ===== Thinking block ===== */
+.msg-thinking { margin-bottom: 8px; }
+
+.msg-thinking-toggle {
+  display: inline-block;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-faint); letter-spacing: 0.06em;
+  cursor: pointer; user-select: none;
+  padding: 2px 0;
+  transition: color 0.12s;
+}
+.msg-thinking-toggle:hover { color: var(--text-dim); }
+.msg-thinking-toggle::before { content: '▾ '; }
+.msg-thinking.collapsed .msg-thinking-toggle::before { content: '▸ '; }
+
+.msg-thinking-body {
+  margin-top: 4px;
+  border-left: 2px solid var(--walnut-lt);
+  padding: 6px 0 6px 12px;
+  font-family: var(--font-mono); font-size: 11px;
+  line-height: 1.6; color: var(--text-faint);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 260px; overflow-y: auto;
+}
+.msg-thinking.collapsed .msg-thinking-body { display: none; }
+
+/* ===== Message meta (model / tokens) ===== */
+.msg-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-faint); letter-spacing: 0.03em;
+  margin-top: 2px; opacity: 0.6;
+  user-select: none;
+}
+
+/* ===== Stop mode for send button ===== */
+.send-btn.stop-mode { color: var(--accent-dim); }
+.send-btn.stop-mode:hover { color: var(--accent); background: var(--bg-hover); }
+
 /* streaming cursor */
 .streaming .msg-content::after {
   content: ''; display: inline-block;

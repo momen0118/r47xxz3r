@@ -1,6 +1,7 @@
 /* ============================
-   ⊹ — Chat Client Logic v4
+   ⊹ — Chat Client Logic v5
    Encrypted localStorage
+   + Fable 5 / thinking表示 / 停止ボタン / usage表示
    ============================ */
 
 (() => {
@@ -107,7 +108,7 @@
           }
         }
         // Ensure defaults for keys that didn't exist
-        if (!oldData[SK.MODEL])    await AkiCrypto.secureSet(SK.MODEL, 'claude-opus-4-7');
+        if (!oldData[SK.MODEL])    await AkiCrypto.secureSet(SK.MODEL, 'claude-fable-5');
         if (!oldData[SK.MAX_TOK])  await AkiCrypto.secureSet(SK.MAX_TOK, '8192');
         if (!oldData[SK.KNOW_ON])  await AkiCrypto.secureSet(SK.KNOW_ON, '1');
         if (!oldData[SK.THREADS])  await AkiCrypto.secureSet(SK.THREADS, '[]');
@@ -208,7 +209,7 @@
 
   async function loadState() {
     if (apiKeyInput)     apiKeyInput.value    = (await sget(SK.API_KEY)) || '';
-    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-7';
+    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-fable-5';
     if (systemPrompt)    systemPrompt.value   = (await sget(SK.SYSTEM))  || '';
     if (knowledgeInput)  knowledgeInput.value  = (await sget(SK.KNOWLEDGE)) || '';
     if (knowledgeToggle) {
@@ -244,7 +245,7 @@
 
   async function saveSettings() {
     await sset(SK.API_KEY,   (apiKeyInput    && apiKeyInput.value    || '').trim());
-    await sset(SK.MODEL,     (modelSelect    && modelSelect.value    || 'claude-opus-4-7'));
+    await sset(SK.MODEL,     (modelSelect    && modelSelect.value    || 'claude-fable-5'));
     await sset(SK.SYSTEM,    (systemPrompt   && systemPrompt.value   || ''));
     await sset(SK.KNOWLEDGE, (knowledgeInput && knowledgeInput.value || ''));
     await sset(SK.KNOW_ON,   (knowledgeToggle && knowledgeToggle.checked) ? '1' : '0');
@@ -466,24 +467,56 @@
       return;
     }
     emptyState.style.display = 'none';
-    t.messages.forEach((m, idx) => chatMessages.appendChild(createMsgEl(m.role, m.text || m.content, m.images, idx)));
+    t.messages.forEach((m, idx) => chatMessages.appendChild(createMsgEl(m, idx)));
     if (forceScroll) scrollToBottom(true);
   }
 
-  function createMsgEl(role, content, images, msgIndex) {
+  function shortModel(id) {
+    return (id || '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
+  }
+  function fmtTok(n) {
+    if (!n) return '0';
+    return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+  }
+
+  function createMsgEl(m, msgIndex) {
+    const role = m.role;
+    const content = m.text || m.content || '';
+    const images = m.images;
     const el = document.createElement('div');
     el.className = `msg ${role}`;
     let imagesHtml = '';
     if (images && images.length > 0) {
       imagesHtml = '<div class="msg-images">' + images.map(img => `<img src="${img.thumbnail || img}" alt="">`).join('') + '</div>';
     }
+    let thinkingHtml = '';
+    if (m.thinking) {
+      thinkingHtml = `<div class="msg-thinking collapsed"><div class="msg-thinking-toggle">thinking</div><div class="msg-thinking-body"></div></div>`;
+    }
     let actionsHtml = '<div class="msg-actions">';
     actionsHtml += `<button class="msg-action copy-action" data-idx="${msgIndex}">copy</button>`;
     if (role === 'user') actionsHtml += `<button class="msg-action edit-action" data-idx="${msgIndex}">edit</button>`;
     if (role === 'assistant') actionsHtml += `<button class="msg-action retry-action" data-idx="${msgIndex}">retry</button>`;
     actionsHtml += '</div>';
-    el.innerHTML = `${imagesHtml}<div class="msg-content"></div>${actionsHtml}`;
+    let metaHtml = '';
+    if (role === 'assistant' && m.meta) {
+      const mt = m.meta;
+      const totalIn = (mt.inTok || 0) + (mt.cacheRead || 0) + (mt.cacheWrite || 0);
+      const parts = [];
+      if (mt.model) parts.push(esc(shortModel(mt.model)));
+      parts.push(`↑${fmtTok(totalIn)} ↓${fmtTok(mt.outTok)}`);
+      if (mt.stopReason === 'max_tokens') parts.push('max_tokens');
+      const detail = `in ${mt.inTok || 0} / cache read ${mt.cacheRead || 0} / cache write ${mt.cacheWrite || 0} / out ${mt.outTok || 0}`;
+      metaHtml = `<div class="msg-meta" title="${esc(detail)}">${parts.join(' · ')}</div>`;
+    }
+    el.innerHTML = `${imagesHtml}${thinkingHtml}<div class="msg-content"></div>${actionsHtml}${metaHtml}`;
     el.querySelector('.msg-content').textContent = content;
+    if (m.thinking) {
+      el.querySelector('.msg-thinking-body').textContent = m.thinking;
+      el.querySelector('.msg-thinking-toggle').addEventListener('click', () => {
+        el.querySelector('.msg-thinking').classList.toggle('collapsed');
+      });
+    }
     el.querySelector('.copy-action').addEventListener('click', () => copyToClipboard(content));
     const editBtn = el.querySelector('.edit-action');
     if (editBtn) editBtn.addEventListener('click', () => { if (!streaming) startEdit(msgIndex); });
@@ -616,7 +649,7 @@
     emptyState.style.display = 'none';
     if (emptyState.parentNode === chatMessages) chatMessages.removeChild(emptyState);
 
-    chatMessages.appendChild(createMsgEl('user', text, msgObj.images, t.messages.length - 1));
+    chatMessages.appendChild(createMsgEl(msgObj, t.messages.length - 1));
     scrollToBottom(true);
 
     if (t.messages.length === 1 && t.name === '新しいスレッド') {
@@ -626,19 +659,31 @@
     const apiMessages = buildApiMessages(t.messages);
     const asstEl = document.createElement('div');
     asstEl.className = 'msg assistant streaming';
-    asstEl.innerHTML = `<div class="msg-content"></div>`;
+    asstEl.innerHTML = `
+      <div class="msg-thinking" style="display:none">
+        <div class="msg-thinking-toggle">thinking</div>
+        <div class="msg-thinking-body"></div>
+      </div>
+      <div class="msg-content"></div>`;
     chatMessages.appendChild(asstEl);
-    const contentEl = asstEl.querySelector('.msg-content');
+    const contentEl   = asstEl.querySelector('.msg-content');
+    const thinkWrap   = asstEl.querySelector('.msg-thinking');
+    const thinkBody   = asstEl.querySelector('.msg-thinking-body');
+    thinkWrap.querySelector('.msg-thinking-toggle').addEventListener('click', () => {
+      thinkWrap.classList.toggle('collapsed');
+    });
     scrollToBottom(true);
 
     streaming = true;
     autoScroll = true;
-    sendBtn.disabled = true;
+    updateSendBtn();
     abortCtrl = new AbortController();
     let fullResponse = '';
+    let fullThinking = '';
+    const meta = { model: null, inTok: 0, cacheRead: 0, cacheWrite: 0, outTok: 0, stopReason: null };
 
     try {
-      const model    = (await sget(SK.MODEL)) || 'claude-opus-4-7';
+      const model    = (await sget(SK.MODEL)) || 'claude-fable-5';
       const maxTok   = parseInt((await sget(SK.MAX_TOK)) || '8192');
       const effort   = (await sget(SK.EFFORT)) || 'none';
       const budget   = EFFORT_MAP[effort] || 0;
@@ -648,9 +693,9 @@
       if (sysBlocks.length > 0) body.system = sysBlocks;
 
       if (effort !== 'none') {
-        // Opus 4.7以降: thinking.type=adaptive + output_config.effort
+        // Fable 5 / Opus 4.7以降: thinking.type=adaptive + output_config.effort
         // それ以前: thinking.type=enabled + budget_tokens
-        const isAdaptive = /opus-4-[78]/.test(model);
+        const isAdaptive = /fable|opus-4-[789]/.test(model);
         if (isAdaptive) {
           body.thinking = { type: 'adaptive' };
           body.output_config = { effort: effort };
@@ -667,7 +712,6 @@
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'prompt-caching-2024-07-31',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify(body),
@@ -695,27 +739,53 @@
           if (data === '[DONE]') continue;
           try {
             const evt = JSON.parse(data);
-            if (evt.type === 'content_block_delta' && evt.delta?.text) {
-              fullResponse += evt.delta.text;
-              contentEl.textContent = fullResponse;
-              scrollToBottom();
+            if (evt.type === 'content_block_delta') {
+              if (evt.delta?.type === 'thinking_delta' && evt.delta.thinking) {
+                fullThinking += evt.delta.thinking;
+                thinkWrap.style.display = '';
+                thinkBody.textContent = fullThinking;
+                thinkBody.scrollTop = thinkBody.scrollHeight;
+                scrollToBottom();
+              } else if (evt.delta?.text) {
+                if (!fullResponse && fullThinking) thinkWrap.classList.add('collapsed');
+                fullResponse += evt.delta.text;
+                contentEl.textContent = fullResponse;
+                scrollToBottom();
+              }
+            } else if (evt.type === 'message_start') {
+              const u = evt.message?.usage || {};
+              meta.model      = evt.message?.model || null;
+              meta.inTok      = u.input_tokens || 0;
+              meta.cacheRead  = u.cache_read_input_tokens || 0;
+              meta.cacheWrite = u.cache_creation_input_tokens || 0;
+            } else if (evt.type === 'message_delta') {
+              if (evt.usage?.output_tokens) meta.outTok = evt.usage.output_tokens;
+              if (evt.delta?.stop_reason)   meta.stopReason = evt.delta.stop_reason;
+            } else if (evt.type === 'error') {
+              throw new Error(evt.error?.message || 'Stream error');
             }
-          } catch {}
+          } catch (e) {
+            if (!(e instanceof SyntaxError)) throw e; // JSON破片のみ無視
+          }
         }
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
         showToast(err.message);
-        if (!fullResponse) asstEl.remove();
       }
     } finally {
       streaming = false;
       abortCtrl = null;
       asstEl.classList.remove('streaming');
-      if (fullResponse) {
-        t.messages.push({ role: 'assistant', text: fullResponse, content: fullResponse });
+      if (fullResponse || fullThinking) {
+        const m = { role: 'assistant', text: fullResponse, content: fullResponse };
+        if (fullThinking) m.thinking = fullThinking;
+        if (meta.model || meta.outTok) m.meta = meta;
+        t.messages.push(m);
         await saveThreads();
         renderMessages(autoScroll);
+      } else {
+        asstEl.remove();
       }
       autoScroll = true;
       updateSendBtn();
@@ -796,10 +866,14 @@
   }
 
   function handleSend() {
+    if (streaming) {
+      // ストリーミング中は停止ボタンとして機能（途中までの応答は保存される）
+      if (abortCtrl) abortCtrl.abort();
+      return;
+    }
     const text = messageInput.value.trim();
     const images = pendingImages.length > 0 ? [...pendingImages] : null;
     if (!text && !images) return;
-    if (streaming) return;
     messageInput.value = '';
     messageInput.style.height = 'auto';
     pendingImages = [];
@@ -808,8 +882,21 @@
     sendMessage(text, images);
   }
 
+  const SVG_SEND = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+  const SVG_STOP = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>`;
+
   function updateSendBtn() {
-    sendBtn.disabled = (!messageInput.value.trim() && pendingImages.length === 0) || streaming;
+    if (streaming) {
+      sendBtn.disabled = false;
+      sendBtn.classList.add('stop-mode');
+      sendBtn.innerHTML = SVG_STOP;
+      sendBtn.title = '停止';
+    } else {
+      sendBtn.classList.remove('stop-mode');
+      sendBtn.innerHTML = SVG_SEND;
+      sendBtn.title = '';
+      sendBtn.disabled = !messageInput.value.trim() && pendingImages.length === 0;
+    }
   }
 
   function toggleSidebar() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
@@ -818,7 +905,7 @@
   async function openSettings() {
     closeSidebar();
     if (apiKeyInput)     apiKeyInput.value    = (await sget(SK.API_KEY)) || '';
-    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-opus-4-7';
+    if (modelSelect)     modelSelect.value    = (await sget(SK.MODEL))   || 'claude-fable-5';
     if (systemPrompt)    systemPrompt.value   = (await sget(SK.SYSTEM))  || '';
     if (knowledgeInput)  knowledgeInput.value  = (await sget(SK.KNOWLEDGE)) || '';
     if (knowledgeToggle) {
